@@ -45,7 +45,7 @@ void cache_add(Cache* cache, const char* key, const char* value, int ttl) {
     }
 }
 
-// Get an entry from the cache
+// Get a value from the cache
 char* cache_get(Cache* cache, const char* key) {
     CacheEntry* current = cache->head;
     while (current != NULL) {
@@ -94,15 +94,15 @@ int main() {
     Cache* cache = cache_init();
 
     // Add some entries to the cache
-    cache_add(cache, "api/response1", "Response 1", 60); // 1 minute TTL
-    cache_add(cache, "api/response2", "Response 2", 300); // 5 minutes TTL
+    cache_add(cache, "api/response/1", "Response 1", 60); // 1 minute TTL
+    cache_add(cache, "api/response/2", "Response 2", 300); // 5 minute TTL
 
-    // Get an entry from the cache
-    char* response = cache_get(cache, "api/response1");
-    if (response != NULL) {
-        printf("Cached response: %s\n", response);
+    // Get a value from the cache
+    char* value = cache_get(cache, "api/response/1");
+    if (value != NULL) {
+        printf("Cached value: %s\n", value);
     } else {
-        printf("No cached response found\n");
+        printf("Value not found in cache\n");
     }
 
     // Clean up the cache
