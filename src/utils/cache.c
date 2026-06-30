@@ -4,7 +4,6 @@
 #include <time.h>
 #include <gtk/gtk.h>
 #include <curl/curl.h>
-#include <sqlite3.h>
 
 // Define the cache structure
 typedef struct CacheEntry {
@@ -90,23 +89,59 @@ void cache_cleanup(Cache* cache) {
 }
 
 // Example usage
-int main() {
+void example_usage() {
     Cache* cache = cache_init();
 
     // Add some entries to the cache
-    cache_add(cache, "api/response/1", "Response 1", 60); // 1 minute TTL
-    cache_add(cache, "api/response/2", "Response 2", 300); // 5 minute TTL
+    cache_add(cache, "api_response_1", "Response 1", 60); // 1 minute TTL
+    cache_add(cache, "api_response_2", "Response 2", 300); // 5 minute TTL
 
     // Get a value from the cache
-    char* value = cache_get(cache, "api/response/1");
+    char* value = cache_get(cache, "api_response_1");
     if (value != NULL) {
         printf("Cached value: %s\n", value);
     } else {
-        printf("Value not found in cache\n");
+        printf("No cached value found\n");
     }
 
     // Clean up the cache
     cache_cleanup(cache);
+}
 
+// Integrate with existing API endpoint file
+void api_endpoint_handler(Cache* cache, const char* key) {
+    char* cached_value = cache_get(cache, key);
+    if (cached_value != NULL) {
+        // Return the cached value
+        printf("Returning cached value: %s\n", cached_value);
+    } else {
+        // Make the API request and cache the response
+        CURL* curl;
+        CURLcode res;
+        char* response;
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl = curl_easy_init();
+        if(curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, "https://example.com/api/endpoint");
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+            res = curl_easy_perform(curl);
+            if(res != CURLE_OK) {
+                fprintf(stderr, "cURL error: %s\n", curl_easy_strerror(res));
+            } else {
+                cache_add(cache, key, response, 60); // Cache the response for 1 minute
+            }
+            curl_easy_cleanup(curl);
+        }
+        curl_global_cleanup();
+    }
+}
+
+int main() {
+    Cache* cache = cache_init();
+    example_usage();
+    api_endpoint_handler(cache, "api_response_1");
+    cache_cleanup(cache);
     return 0;
 }
