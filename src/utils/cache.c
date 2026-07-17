@@ -6,107 +6,132 @@
 #include <curl/curl.h>
 #include <sqlite3.h>
 
-// Define the cache structure
-typedef struct Cache {
+// Define cache structure
+typedef struct CacheEntry {
     char* key;
     char* value;
     time_t ttl;
-} Cache;
+    struct CacheEntry* next;
+} CacheEntry;
 
-// Define the cache table
-typedef struct CacheTable {
-    GHashTable* cache;
-} CacheTable;
+// Define cache head
+CacheEntry* cache_head = NULL;
 
-// Initialize the cache table
-CacheTable* cache_table_init() {
-    CacheTable* table = malloc(sizeof(CacheTable));
-    table->cache = g_hash_table_new(g_str_hash, g_str_equal);
-    return table;
+// Function to add cache entry
+void add_cache_entry(const char* key, const char* value, int ttl) {
+    CacheEntry* new_entry = malloc(sizeof(CacheEntry));
+    new_entry->key = strdup(key);
+    new_entry->value = strdup(value);
+    new_entry->ttl = time(NULL) + ttl;
+    new_entry->next = cache_head;
+    cache_head = new_entry;
 }
 
-// Free the cache table
-void cache_table_free(CacheTable* table) {
-    g_hash_table_destroy(table->cache);
-    free(table);
-}
-
-// Add a new cache entry
-void cache_add(CacheTable* table, const char* key, const char* value, int ttl) {
-    Cache* cache = malloc(sizeof(Cache));
-    cache->key = strdup(key);
-    cache->value = strdup(value);
-    cache->ttl = time(NULL) + ttl;
-    g_hash_table_insert(table->cache, cache->key, cache);
-}
-
-// Get a cache entry
-char* cache_get(CacheTable* table, const char* key) {
-    Cache* cache = g_hash_table_lookup(table->cache, key);
-    if (cache && cache->ttl > time(NULL)) {
-        return cache->value;
-    } else {
-        return NULL;
+// Function to get cache entry
+char* get_cache_entry(const char* key) {
+    CacheEntry* current = cache_head;
+    while (current != NULL) {
+        if (strcmp(current->key, key) == 0) {
+            if (current->ttl > time(NULL)) {
+                return current->value;
+            } else {
+                // Remove expired entry
+                CacheEntry* prev = NULL;
+                CacheEntry* next = current->next;
+                if (prev != NULL) {
+                    prev->next = next;
+                } else {
+                    cache_head = next;
+                }
+                free(current->key);
+                free(current->value);
+                free(current);
+            }
+        }
+        current = current->next;
     }
+    return NULL;
 }
 
-// Remove a cache entry
-void cache_remove(CacheTable* table, const char* key) {
-    Cache* cache = g_hash_table_lookup(table->cache, key);
-    if (cache) {
-        g_hash_table_remove(table->cache, key);
-        free(cache->key);
-        free(cache->value);
-        free(cache);
+// Function to clear cache
+void clear_cache() {
+    CacheEntry* current = cache_head;
+    while (current != NULL) {
+        CacheEntry* next = current->next;
+        free(current->key);
+        free(current->value);
+        free(current);
+        current = next;
     }
+    cache_head = NULL;
 }
 
-// Update the cache entry
-void cache_update(CacheTable* table, const char* key, const char* value, int ttl) {
-    Cache* cache = g_hash_table_lookup(table->cache, key);
-    if (cache) {
-        free(cache->value);
-        cache->value = strdup(value);
-        cache->ttl = time(NULL) + ttl;
-    } else {
-        cache_add(table, key, value, ttl);
-    }
-}
-
-// Check if the cache entry is expired
-int cache_is_expired(CacheTable* table, const char* key) {
-    Cache* cache = g_hash_table_lookup(table->cache, key);
-    if (cache && cache->ttl < time(NULL)) {
-        return 1;
-    } else {
-        return 0;
-    }
+// Function to check if cache is empty
+int is_cache_empty() {
+    return cache_head == NULL;
 }
 
 // Example usage
-int main() {
-    // Initialize the cache table
-    CacheTable* table = cache_table_init();
+void example_usage() {
+    // Add cache entry
+    add_cache_entry("api_response", "example response", 60); // 1 minute TTL
 
-    // Add a new cache entry
-    cache_add(table, "api_response", "example response", 60);
-
-    // Get the cache entry
-    char* value = cache_get(table, "api_response");
-    if (value) {
-        printf("Cache value: %s\n", value);
+    // Get cache entry
+    char* cached_response = get_cache_entry("api_response");
+    if (cached_response != NULL) {
+        printf("Cached response: %s\n", cached_response);
     } else {
-        printf("Cache entry not found or expired\n");
+        printf("No cached response found\n");
     }
 
-    // Update the cache entry
-    cache_update(table, "api_response", "new example response", 60);
+    // Clear cache
+    clear_cache();
+}
 
-    // Remove the cache entry
-    cache_remove(table, "api_response");
+// Integration with existing files
+void integrate_with_api(const char* api_url) {
+    CURL* curl;
+    CURLcode res;
+    char* readBuffer;
 
-    // Free the cache table
-    cache_table_free(table);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, api_url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        res = curl_easy_perform(curl);
+        if(res != CURLE_OK) {
+            fprintf(stderr, "cURL error: %s\n", curl_easy_strerror(res));
+        } else {
+            // Cache API response
+            add_cache_entry("api_response", readBuffer, 60); // 1 minute TTL
+        }
+        curl_easy_cleanup(curl);
+    }
+    curl_global_cleanup();
+}
+
+int main() {
+    // Initialize GTK+
+    gtk_init(NULL, NULL);
+
+    // Initialize database
+    sqlite3* db;
+    int rc = sqlite3_open("database.db", &db);
+    if (rc) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+        return 1;
+    }
+
+    // Initialize authentication
+    // ...
+
+    // Integrate with API
+    integrate_with_api("https://example.com/api/endpoint");
+
+    // Example usage
+    example_usage();
 
     return 0;
 }
