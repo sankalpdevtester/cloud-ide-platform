@@ -4,6 +4,7 @@
 #include <time.h>
 #include <gtk/gtk.h>
 #include <curl/curl.h>
+#include <sqlite3.h>
 
 // Define the cache structure
 typedef struct CacheEntry {
@@ -44,7 +45,7 @@ void cache_add(Cache* cache, const char* key, const char* value, int ttl) {
     }
 }
 
-// Get a value from the cache
+// Get an entry from the cache
 char* cache_get(Cache* cache, const char* key) {
     CacheEntry* current = cache->head;
     while (current != NULL) {
@@ -75,8 +76,8 @@ char* cache_get(Cache* cache, const char* key) {
     return NULL;
 }
 
-// Clean up the cache
-void cache_cleanup(Cache* cache) {
+// Clear the cache
+void cache_clear(Cache* cache) {
     CacheEntry* current = cache->head;
     while (current != NULL) {
         CacheEntry* next = current->next;
@@ -85,27 +86,94 @@ void cache_cleanup(Cache* cache) {
         free(current);
         current = next;
     }
-    free(cache);
+    cache->head = NULL;
+    cache->tail = NULL;
 }
 
 // Example usage
-int main() {
+void example_usage() {
     Cache* cache = cache_init();
 
     // Add some entries to the cache
-    cache_add(cache, "api_response_1", "Response 1", 60); // 1 minute TTL
-    cache_add(cache, "api_response_2", "Response 2", 300); // 5 minute TTL
+    cache_add(cache, "key1", "value1", 60); // 1 minute TTL
+    cache_add(cache, "key2", "value2", 300); // 5 minutes TTL
 
-    // Get a value from the cache
-    char* value = cache_get(cache, "api_response_1");
+    // Get an entry from the cache
+    char* value = cache_get(cache, "key1");
     if (value != NULL) {
-        printf("Cached value: %s\n", value);
+        printf("Value for key1: %s\n", value);
     } else {
-        printf("Value not found in cache\n");
+        printf("Key1 not found or expired\n");
     }
 
-    // Clean up the cache
-    cache_cleanup(cache);
+    // Clear the cache
+    cache_clear(cache);
+
+    // Free the cache
+    free(cache);
+}
+
+// Integrate with existing files
+void integrate_with_api(Cache* cache, const char* api_url) {
+    CURL* curl;
+    CURLcode res;
+    char* readBuffer;
+
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, api_url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        res = curl_easy_perform(curl);
+        if(res != CURLE_OK) {
+            fprintf(stderr, "cURL error: %s\n", curl_easy_strerror(res));
+        } else {
+            // Cache the API response
+            cache_add(cache, api_url, readBuffer, 60); // 1 minute TTL
+        }
+        curl_easy_cleanup(curl);
+    }
+    curl_global_cleanup();
+}
+
+// Integrate with existing database
+void integrate_with_database(Cache* cache, sqlite3* db) {
+    sqlite3_stmt* stmt;
+    const char* query = "SELECT * FROM users";
+    int rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(db));
+    } else {
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            const unsigned char* key = sqlite3_column_text(stmt, 0);
+            const unsigned char* value = sqlite3_column_text(stmt, 1);
+            // Cache the database entry
+            cache_add(cache, (const char*)key, (const char*)value, 60); // 1 minute TTL
+        }
+        sqlite3_finalize(stmt);
+    }
+}
+
+int main() {
+    Cache* cache = cache_init();
+
+    // Integrate with existing API
+    integrate_with_api(cache, "https://example.com/api/endpoint");
+
+    // Integrate with existing database
+    sqlite3* db;
+    int rc = sqlite3_open("database.db", &db);
+    if (rc) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+    } else {
+        integrate_with_database(cache, db);
+        sqlite3_close(db);
+    }
+
+    // Free the cache
+    cache_clear(cache);
+    free(cache);
 
     return 0;
 }
