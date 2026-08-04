@@ -4,7 +4,6 @@
 #include <time.h>
 #include <gtk/gtk.h>
 #include <curl/curl.h>
-#include <sqlite3.h>
 
 // Define the cache structure
 typedef struct CacheEntry {
@@ -45,7 +44,7 @@ void cache_add(Cache* cache, const char* key, const char* value, int ttl) {
     }
 }
 
-// Get an entry from the cache
+// Get a value from the cache
 char* cache_get(Cache* cache, const char* key) {
     CacheEntry* current = cache->head;
     while (current != NULL) {
@@ -53,7 +52,7 @@ char* cache_get(Cache* cache, const char* key) {
             if (current->ttl > time(NULL)) {
                 return current->value;
             } else {
-                // Remove expired entry
+                // Remove the expired entry
                 if (current == cache->head) {
                     cache->head = current->next;
                 } else {
@@ -97,12 +96,12 @@ int main() {
     cache_add(cache, "api_response_1", "Response 1", 60); // 1 minute TTL
     cache_add(cache, "api_response_2", "Response 2", 300); // 5 minute TTL
 
-    // Get an entry from the cache
-    char* response = cache_get(cache, "api_response_1");
-    if (response != NULL) {
-        printf("Cached response: %s\n", response);
+    // Get a value from the cache
+    char* value = cache_get(cache, "api_response_1");
+    if (value != NULL) {
+        printf("Cached value: %s\n", value);
     } else {
-        printf("No cached response found\n");
+        printf("Value not found in cache\n");
     }
 
     // Clean up the cache
